@@ -1,24 +1,24 @@
 """
 Modul SystemController
-Mengeksekusi pergerakan scroll dengan mekanika Virtual Joystick dan Speed Smoothing.
+Mengeksekusi pergerakan scroll dengan mekanika Kemiringan Tuas Gas Pergelangan (Wrist Tilt).
 """
 import pyautogui
 import pygetwindow as gw
 
 class SystemController:
-    def __init__(self, sensitivity=0.4, deadzone=30):
+    # Deadzone diturunkan menjadi 15 karena angka kemiringan (tilt) lebih kecil dari piksel layar penuh
+    # Sensitivitas dinaikkan menjadi 0.7 agar respons tuas gas lebih gesit
+    def __init__(self, sensitivity=0.7, deadzone=15):
         self.sensitivity = sensitivity 
         self.deadzone = deadzone       
         
         pyautogui.FAILSAFE = False
         pyautogui.PAUSE = 0
         
-        # State Tracking
         self.is_engaged = False
-        self.anchor_y = None
+        self.anchor_tilt = None
         self.has_paged_in_current_swipe = False 
         
-        # Filter Penghalus Kecepatan (Speed EMA)
         self.smoothed_speed = 0.0
         self.speed_ema_alpha = 0.3
 
@@ -33,8 +33,11 @@ class SystemController:
             pass
         return False
 
-    def process_dynamic_motion(self, is_active, current_y):
-        if current_y is None:
+    def process_dynamic_motion(self, is_active, current_tilt):
+        """
+        Mengeksekusi scroll dinamis berdasarkan kemiringan pergelangan (Tilt).
+        """
+        if current_tilt is None:
             self._reset_state()
             return "IDLE"
 
@@ -43,51 +46,54 @@ class SystemController:
         if is_active:
             if not self.is_engaged:
                 self.is_engaged = True
-                self.anchor_y = current_y 
+                self.anchor_tilt = current_tilt # Mengunci kemiringan dasar
                 self.has_paged_in_current_swipe = False
                 self.smoothed_speed = 0.0
-                return "ENGAGED (ANCHOR LOCKED)"
+                return "ENGAGED (TILT LOCKED)"
             else:
-                offset_y = current_y - self.anchor_y
+                # Penyimpangan kemiringan pergelangan
+                offset_tilt = current_tilt - self.anchor_tilt
                 
                 if is_presentation:
-                    swipe_threshold = 40 
+                    # Swipe mode untuk presentasi
+                    swipe_threshold = 25 
                     if not self.has_paged_in_current_swipe:
-                        if offset_y < -swipe_threshold:
+                        if offset_tilt < -swipe_threshold:
                             pyautogui.press('pagedown')
                             self.has_paged_in_current_swipe = True
                             return "SWIPED: NEXT SLIDE"
-                        elif offset_y > swipe_threshold:
+                        elif offset_tilt > swipe_threshold:
                             pyautogui.press('pageup')
                             self.has_paged_in_current_swipe = True
                             return "SWIPED: PREV SLIDE"
                 else:
-                    if abs(offset_y) > self.deadzone:
-                        raw_speed = (abs(offset_y) - self.deadzone) * self.sensitivity
+                    if abs(offset_tilt) > self.deadzone:
+                        raw_speed = (abs(offset_tilt) - self.deadzone) * self.sensitivity
                         self.smoothed_speed = (self.speed_ema_alpha * raw_speed) + ((1 - self.speed_ema_alpha) * self.smoothed_speed)
                         
                         final_speed = int(self.smoothed_speed)
                         if final_speed < 1:
                             final_speed = 1
                             
-                        # Logika Arah (Sesuai Permintaan)
-                        # offset_y < 0 artinya Telunjuk ditarik ke ATAS (karena Y=0 ada di atas layar).
-                        if offset_y < 0:
+                        # offset_tilt < 0 berarti pergelangan ditengadahkan ke ATAS
+                        # offset_tilt > 0 berarti pergelangan ditekuk/ditundukkan ke BAWAH
+                        if offset_tilt < 0:
                             pyautogui.scroll(final_speed) # Scroll layar ke ATAS
                             return f"AUTO-SCROLL UP ({final_speed})"
                         else:
                             pyautogui.scroll(-final_speed) # Scroll layar ke BAWAH
                             return f"AUTO-SCROLL DOWN ({final_speed})"
                     else:
+                        # Rem Perlahan
                         self.smoothed_speed = (1 - self.speed_ema_alpha) * self.smoothed_speed
                 
-                return "HOLDING ANCHOR"
+                return "HOLDING TILT ANCHOR"
         else:
             self._reset_state()
             return "IDLE"
 
     def _reset_state(self):
         self.is_engaged = False
-        self.anchor_y = None
+        self.anchor_tilt = None
         self.has_paged_in_current_swipe = False
         self.smoothed_speed = 0.0

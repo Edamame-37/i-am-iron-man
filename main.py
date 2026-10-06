@@ -16,7 +16,7 @@ def main():
 
     tracker = HandTracker(detection_con=0.8, track_con=0.8)
     recognizer = GestureRecognizer(ema_alpha=0.65)
-    controller = SystemController(sensitivity=0.4, deadzone=20)
+    controller = SystemController(sensitivity=0.7, deadzone=15)
 
     window_name = "Iron Man Vision Controller"
     
@@ -27,12 +27,12 @@ def main():
     print("==================================================")
     print("IRON MAN COMPUTER VISION CONTROLLER AKTIF!")
     print("==================================================")
-    print("Mekanika Virtual Joystick (Auto-Scroll):")
-    print("  1. Acungkan JARI TELUNJUK untuk mengunci Titik Nol (Anchor).")
-    print("  2. Tarik Telunjuk ke Atas/Bawah dan TAHAN posisinya.")
-    print("     - Telunjuk ke ATAS = Scroll layar ke ATAS")
-    print("     - Telunjuk ke BAWAH = Scroll layar ke BAWAH")
-    print("  3. Buka seluruh tangan (Rentangkan Jari) untuk berhenti/mengerem.")
+    print("Mekanika Tuas Gas Pergelangan (Wrist Tilt Throttle):")
+    print("  1. Acungkan Telunjuk untuk mengunci kemiringan netral.")
+    print("  2. LENGAN DIAM! Cukup Tundukkan/Tekuk pergelangan Anda:")
+    print("     - Tekuk telapak ke BAWAH (layaknya ngegas) = Scroll BAWAH")
+    print("     - Tengadahkan telapak ke ATAS = Scroll ATAS")
+    print("  3. Buka seluruh tangan (Rentangkan Jari) untuk mengerem.")
     print("==================================================")
     print("Fitur UI & Mode Latar Belakang:")
     print("  - Jendela Kamera Selalu di Atas (Always on Top).")
@@ -55,23 +55,22 @@ def main():
             status_text = "NO HAND"
 
             if len(lm_list) != 0:
-                # Menggunakan deteksi gestur Telunjuk
-                is_active, current_y = recognizer.get_joystick_state(lm_list)
-                status_text = controller.process_dynamic_motion(is_active, current_y)
+                is_active, current_tilt = recognizer.get_joystick_state(lm_list)
+                status_text = controller.process_dynamic_motion(is_active, current_tilt)
                 
                 if is_active:
-                    # Titik koordinat adalah ujung Telunjuk
+                    # Ambil Ujung Telunjuk dan Pergelangan Tangan
                     index_tip = lm_list[8]
-                    cx = index_tip[1]
-                    cy = index_tip[2]
+                    wrist = lm_list[0]
                     
-                    anchor = controller.anchor_y
-                    if anchor is not None:
-                        # Jangkar divisualisasikan dari ujung telunjuk
-                        cv2.circle(img, (cx, int(anchor)), 5, (0, 0, 255), cv2.FILLED)
-                        cv2.line(img, (cx, int(anchor)), (cx, cy), (255, 0, 0), 2)
+                    cx, cy = index_tip[1], index_tip[2]
+                    wx, wy = wrist[1], wrist[2]
                     
-                    cv2.circle(img, (cx, cy), 15, (0, 255, 0), cv2.FILLED) 
+                    # Visualisasi Tuas Gas (Garis yang menghubungkan engsel pergelangan ke telunjuk)
+                    cv2.line(img, (wx, wy), (cx, cy), (0, 255, 255), 4) # Garis Kuning Penghubung
+                    cv2.circle(img, (wx, wy), 10, (255, 0, 0), cv2.FILLED) # Titik Biru di Engsel
+                    cv2.circle(img, (cx, cy), 15, (0, 255, 0), cv2.FILLED) # Titik Hijau di Ujung
+                    
             else:
                 recognizer.reset_smoothing()
                 status_text = controller.process_dynamic_motion(False, None)

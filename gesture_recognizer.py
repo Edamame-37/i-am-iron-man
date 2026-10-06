@@ -1,6 +1,6 @@
 """
 Modul GestureRecognizer
-Menganalisis pergerakan dinamis berdasarkan gestur Jari Telunjuk.
+Menganalisis pergerakan kemiringan telapak tangan (Wrist Tilt Throttle).
 Dilengkapi dengan Exponential Moving Average (EMA) dan mekanisme State Machine.
 """
 import math
@@ -17,12 +17,10 @@ class GestureRecognizer:
         if len(lm_list) == 0:
             return fingers
 
-        # ID Landmark Ujung dan Pangkal Jari (Telunjuk, Tengah, Manis, Kelingking)
         tip_ids = [8, 12, 16, 20]
         pip_ids = [6, 10, 14, 18]
         wrist = lm_list[0]
         
-        # Jempol (index 0) kita jadikan 0 saja karena tidak terlalu krusial di logika ini
         fingers.append(0) 
 
         for i in range(4):
@@ -32,19 +30,17 @@ class GestureRecognizer:
             dist_tip = math.hypot(tip[1] - wrist[1], tip[2] - wrist[2])
             dist_pip = math.hypot(pip[1] - wrist[1], pip[2] - wrist[2])
             
-            # Jika jarak ujung jari ke pergelangan lebih jauh dari jarak pangkal ke pergelangan, 
-            # berarti jari sedang terentang/terbuka.
             if dist_tip > dist_pip:
-                fingers.append(1) # Terbuka
+                fingers.append(1) 
             else:
-                fingers.append(0) # Tertutup
+                fingers.append(0) 
                 
         return fingers
 
     def get_joystick_state(self, lm_list):
         """
-        Mendeteksi apakah pengguna sedang mengacungkan telunjuk (Engage) atau membuka tangan (Release).
-        Menggunakan Dual-Threshold berbasis status jari.
+        Mendeteksi kemiringan sudut pergelangan tangan (Tilt).
+        Mengisolasi pergerakan lengan dan mengukur kemiringan telapak secara mandiri.
         """
         if len(lm_list) == 0:
             self.is_currently_engaged = False
@@ -54,26 +50,31 @@ class GestureRecognizer:
         if len(fingers) < 5:
             return self.is_currently_engaged, self.smoothed_y
             
-        # Sumbu Y untuk pergerakan diambil murni dari koordinat Ujung Jari Telunjuk
         index_tip = lm_list[8]
-        raw_y = index_tip[2]
+        wrist = lm_list[0]
+        index_base = lm_list[5]
         
-        # Penghalus Koordinat Y (Meredam getaran mikro telunjuk)
+        # Jarak referensi telapak tangan (digunakan sebagai penyeimbang ukuran 3D)
+        ref_dist = math.hypot(index_base[1] - wrist[1], index_base[2] - wrist[2])
+        if ref_dist == 0:
+            ref_dist = 1
+            
+        # KALKULASI SUDUT KEMIRINGAN (NORMALIZED TILT)
+        # Menghitung jarak Y antara telunjuk dan pergelangan, dibagi ukuran tangan.
+        # Angka ini KEBAL terhadap pergeseran lengan Anda di kamera!
+        raw_tilt = ((index_tip[2] - wrist[2]) / ref_dist) * 100
+        
+        # Penghalus Sudut (Meredam getaran mikro pergelangan)
         if self.smoothed_y is None:
-            self.smoothed_y = raw_y
+            self.smoothed_y = raw_tilt
         else:
-            self.smoothed_y = (self.ema_alpha * raw_y) + ((1 - self.ema_alpha) * self.smoothed_y)
+            self.smoothed_y = (self.ema_alpha * raw_tilt) + ((1 - self.ema_alpha) * self.smoothed_y)
             
         # LOGIKA STATE MACHINE BERBASIS JARI
         if not self.is_currently_engaged:
-            # Mode "Belum Aktif" -> Mencari Titik Kunci (ENGAGE)
-            # Syaratnya KETAT: Telunjuk terbuka, TAPI jari Tengah, Manis, Kelingking HARUS tertutup (menggenggam).
             if fingers[1] == 1 and fingers[2] == 0 and fingers[3] == 0 and fingers[4] == 0:
                 self.is_currently_engaged = True
         else:
-            # Mode "Sedang Aktif" -> Mempertahankan Kuncian / Mencari Titik Lepas (RELEASE)
-            # Syarat matinya LONGGAR: Jika Jari Tengah dan Manis mulai dibuka lebar (Tangan Netral).
-            # Ini memberikan respons pengereman seketika saat tangan dibuka.
             if fingers[2] == 1 and fingers[3] == 1:
                 self.is_currently_engaged = False
                 
