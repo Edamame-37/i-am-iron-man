@@ -1,51 +1,82 @@
 """
-Modul HandTracker
-Bertugas untuk mendeteksi tangan dan mendapatkan posisi landmark menggunakan MediaPipe.
+Modul HandTracker (Versi Modern - Tasks API)
+Bertugas untuk mendeteksi tangan dan mendapatkan posisi landmark menggunakan MediaPipe Tasks API.
 """
 import cv2
+import urllib.request
+import os
 import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
 
 class HandTracker:
     def __init__(self, mode=False, max_hands=1, detection_con=0.7, track_con=0.7):
         """
-        Inisialisasi HandTracker dengan parameter MediaPipe.
-        :param mode: False untuk mendeteksi jika tracker kehilangan tangan
-        :param max_hands: Jumlah maksimum tangan yang dideteksi
-        :param detection_con: Minimum tingkat kepercayaan (confidence) untuk deteksi awal
-        :param track_con: Minimum tingkat kepercayaan untuk melacak (tracking) tangan
+        Inisialisasi HandTracker dengan parameter MediaPipe Tasks API.
         """
-        self.mode = mode
-        self.max_hands = max_hands
-        self.detection_con = detection_con
-        self.track_con = track_con
+        self.model_path = 'hand_landmarker.task'
+        # Download model hand_landmarker.task secara otomatis jika belum ada di komputer
+        if not os.path.exists(self.model_path):
+            print("\nMendownload model AI deteksi tangan (hanya perlu dilakukan sekali)...")
+            url = 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task'
+            urllib.request.urlretrieve(url, self.model_path)
+            print("Download selesai!\n")
 
-        # Inisialisasi MediaPipe Hands
-        self.mp_hands = mp.solutions.hands
-        self.hands = self.mp_hands.Hands(
-            static_image_mode=self.mode,
-            max_num_hands=self.max_hands,
-            min_detection_confidence=float(self.detection_con),
-            min_tracking_confidence=float(self.track_con)
+        base_options = python.BaseOptions(model_asset_path=self.model_path)
+        
+        # Menggunakan mode IMAGE karena diproses sinkron per frame (cocok untuk loop sederhana)
+        options = vision.HandLandmarkerOptions(
+            base_options=base_options,
+            num_hands=max_hands,
+            min_hand_detection_confidence=float(detection_con),
+            min_hand_presence_confidence=float(track_con),
+            min_tracking_confidence=float(track_con),
+            running_mode=vision.RunningMode.IMAGE
         )
-        # Utility untuk menggambar titik-titik (landmarks) dan garis di layar
-        self.mp_draw = mp.solutions.drawing_utils
+
+        self.detector = vision.HandLandmarker.create_from_options(options)
+        self.results = None
+        
+        # Definisi manual koneksi tulang jari (pengganti modul solutions yang telah dihapus Google)
+        self.HAND_CONNECTIONS = [
+            (0,1), (1,2), (2,3), (3,4),       # Jempol
+            (0,5), (5,6), (6,7), (7,8),       # Telunjuk
+            (5,9), (9,10), (10,11), (11,12),  # Tengah
+            (9,13), (13,14), (14,15), (15,16),# Manis
+            (13,17), (17,18), (18,19), (19,20),# Kelingking
+            (0,17)                            # Telapak bawah
+        ]
 
     def find_hands(self, img, draw=True):
         """
         Mendeteksi tangan dalam frame gambar.
         Mengembalikan frame asli yang sudah digambar landmark-nya jika draw=True.
         """
-        # Konversi gambar dari BGR (format default OpenCV) ke RGB (format yang dibutuhkan MediaPipe)
+        # Konversi BGR ke RGB untuk MediaPipe
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         
-        # Proses gambar untuk mencari tangan
-        self.results = self.hands.process(img_rgb)
+        # Konversi dari NumPy Array ke Format Objek Gambar MediaPipe
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_rgb)
+        
+        # Deteksi tangan menggunakan Tasks API terbaru
+        self.results = self.detector.detect(mp_image)
 
-        # Jika ditemukan tangan, dan kita ingin menggambarnya
-        if self.results.multi_hand_landmarks and draw:
-            for hand_lms in self.results.multi_hand_landmarks:
-                # Menggambar titik dan garis penghubung tangan ke frame gambar
-                self.mp_draw.draw_landmarks(img, hand_lms, self.mp_hands.HAND_CONNECTIONS)
+        # Gambar manual di atas OpenCV (Pengganti mp_draw.draw_landmarks)
+        if self.results and self.results.hand_landmarks and draw:
+            for hand_lms in self.results.hand_landmarks:
+                h, w, c = img.shape
+                pts = {}
+                
+                # Simpan titik koordinat & Gambar titik
+                for id, lm in enumerate(hand_lms):
+                    cx, cy = int(lm.x * w), int(lm.y * h)
+                    pts[id] = (cx, cy)
+                    cv2.circle(img, (cx, cy), 5, (255, 0, 255), cv2.FILLED)
+                
+                # Gambar garis penghubung sendi tangan
+                for p1, p2 in self.HAND_CONNECTIONS:
+                    if p1 in pts and p2 in pts:
+                        cv2.line(img, pts[p1], pts[p2], (0, 255, 0), 2)
         
         return img
 
@@ -55,16 +86,12 @@ class HandTracker:
         Mengembalikan list berisi [id_sendi, koordinat_x, koordinat_y].
         """
         lm_list = []
-        if self.results.multi_hand_landmarks:
-            # Mengambil data dari tangan pertama (indeks ke-0)
-            my_hand = self.results.multi_hand_landmarks[hand_no]
-            
-            # Mendapatkan dimensi dari gambar (Tinggi, Lebar, Channel/Warna)
-            h, w, c = img.shape
-            
-            for id, lm in enumerate(my_hand.landmark):
-                # Landmark.x dan .y berupa rasio dari 0 hingga 1.
-                # Kita perlu mengalikannya dengan lebar dan tinggi asli layar untuk mendapat posisi pixel sebenarnya.
-                cx, cy = int(lm.x * w), int(lm.y * h)
-                lm_list.append([id, cx, cy])
+        if self.results and self.results.hand_landmarks:
+            # Memastikan index hand_no tidak lebih dari jumlah tangan terdeteksi
+            if hand_no < len(self.results.hand_landmarks):
+                my_hand = self.results.hand_landmarks[hand_no]
+                h, w, c = img.shape
+                for id, lm in enumerate(my_hand):
+                    cx, cy = int(lm.x * w), int(lm.y * h)
+                    lm_list.append([id, cx, cy])
         return lm_list
