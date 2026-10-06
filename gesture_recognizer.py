@@ -1,6 +1,6 @@
 """
 Modul GestureRecognizer
-Bertugas untuk menganalisis landmark dari tangan dan menentukan orientasi telapak tangan secara matematis.
+Bertugas untuk menganalisis landmark dari tangan dan menentukan kombinasi jari.
 """
 import math
 
@@ -14,7 +14,7 @@ class GestureRecognizer:
         """
         Menganalisis koordinat landmark dan mengembalikan list integer (1=buka, 0=tutup)
         untuk kelima jari berurutan: [Jempol, Telunjuk, Tengah, Manis, Kelingking].
-        Menghitung berdasarkan jarak Euclidean (tidak bergantung pada rotasi tangan).
+        Menghitung berdasarkan jarak Euclidean (tahan terhadap rotasi tangan).
         """
         fingers = []
         if len(lm_list) == 0:
@@ -40,7 +40,7 @@ class GestureRecognizer:
 
     def recognize(self, lm_list):
         """
-        Menentukan gestur berdasarkan sudut arah tangan (Jika tangan terbuka).
+        Menentukan gestur berdasarkan jari-jari yang terbuka.
         Mengembalikan string berisi nama gestur.
         """
         if len(lm_list) == 0:
@@ -48,31 +48,15 @@ class GestureRecognizer:
             
         fingers = self.get_fingers_up(lm_list)
         
-        # Syarat utama: Tangan harus terbuka (Minimal 3 atau 4 jari terbuka).
-        # Jika mengepal (kurang dari 3 jari terbuka), langsung ke NEUTRAL
-        if fingers.count(1) < 3:
-            return "NEUTRAL"
-            
-        # --- MENGHITUNG SUDUT ORIENTASI TANGAN ---
-        # Titik 0 adalah Pergelangan, Titik 9 adalah Pangkal Jari Tengah
-        x0, y0 = lm_list[0][1], lm_list[0][2]
-        x9, y9 = lm_list[9][1], lm_list[9][2]
+        # Aturan Gestur Scroll Up (V Sign / Peace): 
+        # Telunjuk [1] dan Tengah [2] terbuka. Manis [3] dan Kelingking [4] tertutup.
+        if fingers[1] == 1 and fingers[2] == 1 and fingers[3] == 0 and fingers[4] == 0:
+            return "SCROLL_UP"
         
-        # Hitung selisih koordinat
-        dy = y9 - y0
-        dx = x9 - x0
+        # Aturan Gestur Scroll Down (Menunjuk):
+        # Hanya Telunjuk [1] yang terbuka. Tengah, Manis, Kelingking tertutup.
+        if fingers[1] == 1 and fingers[2] == 0 and fingers[3] == 0 and fingers[4] == 0:
+            return "SCROLL_DOWN"
         
-        # Hitung sudut dalam derajat
-        angle = math.degrees(math.atan2(dy, dx))
-        
-        # Analisis Arah (Mengingat koordinat Y layar komputer membesar ke Bawah)
-        if -135 <= angle < -45:
-            return "SCROLL_UP"    # Tangan menunjuk tegak ke atas
-        elif 45 <= angle < 135:
-            return "SCROLL_DOWN"  # Tangan menunjuk tegak ke bawah
-        elif -45 <= angle < 45:
-            return "ALT_TAB"      # Tangan menunjuk ke arah Kanan layar
-        elif angle >= 135 or angle < -135:
-            return "CTRL_TAB"     # Tangan menunjuk ke arah Kiri layar
-            
-        return "UNKNOWN"
+        # Selain itu (misalnya kelima jari terbuka, atau tangan mengepal penuh)
+        return "NEUTRAL"

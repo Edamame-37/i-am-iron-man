@@ -40,28 +40,16 @@ class SystemController:
         """Navigasi slide ke bawah (Selanjutnya)."""
         pyautogui.press('pagedown')
 
-    def alt_tab(self):
-        """Pindah Jendela / Aplikasi Aktif."""
-        pyautogui.hotkey('alt', 'tab')
-
-    def ctrl_tab(self):
-        """Pindah Tab dalam Browser / Aplikasi."""
-        pyautogui.hotkey('ctrl', 'tab')
-
     def execute_gesture(self, current_gesture):
         """
         Mengeksekusi aksi berdasarkan gestur yang dibaca.
-        Menggunakan sistem Debounce (Anti-Spam) untuk membatasi eksekusi aksi berulang.
+        Menggunakan sistem Debounce (Anti-Spam) untuk membatasi eksekusi aksi berulang pada presentasi.
         """
         is_presentation = self.is_presentation_active()
 
         # DEBOUNCE: Jika gestur yang masuk BERBEDA dari frame sebelumnya (Baru dipicu)
         if current_gesture != self.previous_gesture:
-            if current_gesture == "ALT_TAB":
-                self.alt_tab()
-            elif current_gesture == "CTRL_TAB":
-                self.ctrl_tab()
-            elif current_gesture == "SCROLL_UP":
+            if current_gesture == "SCROLL_UP":
                 if is_presentation:
                     self.page_up()
                 else:
