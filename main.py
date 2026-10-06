@@ -22,6 +22,8 @@ def main():
     
     # MENGATUR UKURAN JENDELA AGAR BISA DI-RESIZE BEBAS
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    # MEMBUAT JENDELA "ALWAYS ON TOP" AGAR TIDAK TENGGELAM OLEH APLIKASI LAIN
+    cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
     show_window = True
 
     print("==================================================")
