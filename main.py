@@ -23,15 +23,20 @@ def main():
     # 2. Inisialisasi Modul-modul kita
     tracker = HandTracker(detection_con=0.8, track_con=0.8) # Confidence tinggi agar akurat
     recognizer = GestureRecognizer()
-    controller = SystemController(scroll_speed=40) # Kecepatan scroll, bisa disesuaikan
+    controller = SystemController(scroll_speed=40) # Kecepatan scroll
 
     print("==================================================")
     print("IRON MAN COMPUTER VISION CONTROLLER AKTIF!")
     print("==================================================")
-    print("Gestur:")
-    print("  - V Sign (Telunjuk & Tengah) : Scroll Atas")
-    print("  - Menunjuk (Hanya Telunjuk)  : Scroll Bawah")
-    print("  - Tangan Mengepal/Terbuka    : Berhenti (Netral)")
+    print("Gestur Baru (Orientasi Tangan Terbuka):")
+    print("  - Tunjuk/Geser Ke Atas   : Scroll Atas")
+    print("  - Tunjuk/Geser Ke Bawah  : Scroll Bawah")
+    print("  - Tunjuk/Geser Ke Kiri   : CTRL + TAB (Pindah Tab)")
+    print("  - Tunjuk/Geser Ke Kanan  : ALT + TAB (Pindah Aplikasi)")
+    print("  - Tangan Mengepal        : Berhenti (Netral)")
+    print("==================================================")
+    print("Fitur Cerdas:")
+    print("  - Paging Mode akan aktif otomatis di PowerPoint/Slide.")
     print("Tekan 'q' pada jendela video untuk keluar dari program.")
     print("==================================================")
 
@@ -57,14 +62,15 @@ def main():
 
         # Jika tangan terdeteksi (list tidak kosong)
         if len(lm_list) != 0:
-            # 1. Analisis jari yang terbuka/tertutup
-            fingers = recognizer.get_fingers_up(lm_list)
+            # 1. Analisis orientasi arah jari untuk mendapatkan gestur
+            current_gesture = recognizer.recognize(lm_list)
             
-            # 2. Terjemahkan susunan jari menjadi gestur yang dikenali
-            current_gesture = recognizer.recognize(fingers)
-            
-            # 3. Kirim gestur tersebut ke kontroler untuk mengeksekusi aksi di OS
+            # 2. Kirim gestur tersebut ke kontroler untuk mengeksekusi aksi di OS
             controller.execute_gesture(current_gesture)
+        else:
+            # Jika tidak ada tangan, reset state debounce ke Netral
+            controller.execute_gesture("NEUTRAL")
+            current_gesture = "NO HAND"
 
         # Hitung Frame Per Second (FPS) untuk melihat kecepatan program
         c_time = time.time()
