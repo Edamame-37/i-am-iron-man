@@ -50,8 +50,8 @@ class GestureRecognizer:
                 self.is_currently_pinched = True
         else:
             # State "Sedang Mencubit" -> Mempertahankan Kuncian / Mencari Titik Lepas (RELEASE)
-            # Syarat matinya LONGGAR (> 50%). Kebal getaran tarik, tapi MATI INSTAN tanpa delay saat jari dibuka.
-            if ratio > 0.50:
+            # Syarat matinya SANGAT LONGGAR (> 80%). Kebal ilusi optik kamera saat tangan diputar.
+            if ratio > 0.80:
                 self.is_currently_pinched = False
                 
         return self.is_currently_pinched, self.smoothed_y
