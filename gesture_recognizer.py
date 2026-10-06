@@ -1,29 +1,27 @@
 """
 Modul GestureRecognizer
 Menganalisis pergerakan dinamis (Dynamic Motion) dan status sentuhan (Pinch).
-Dilengkapi dengan Exponential Moving Average (EMA) dan Hysteresis Buffer.
+Dilengkapi dengan Exponential Moving Average (EMA) dan mekanisme Schmitt Trigger (Batas Ganda).
 """
 import math
 
 class GestureRecognizer:
-    def __init__(self, ema_alpha=0.65, drop_tolerance_frames=7):
+    def __init__(self, ema_alpha=0.65):
         self.ema_alpha = ema_alpha
         self.smoothed_y = None
         
-        # Hysteresis (Anti-Drop) Buffer
-        self.drop_tolerance_frames = drop_tolerance_frames
-        self.frames_since_drop = 0
-        self.stable_pinch_state = False
+        # Schmitt Trigger State
+        self.is_currently_pinched = False
         
     def get_pinch_state(self, lm_list):
         """
         Mendeteksi apakah pengguna sedang melakukan Pinch.
-        Dilengkapi dengan sistem Pemaaf (Hysteresis) agar cubitan tidak hilang saat frame nge-drop.
+        Menggunakan Dual-Threshold agar jari harus benar-benar menyentuh untuk mulai,
+        namun rilis seketika (tanpa delay) saat dibuka lebar.
         """
         if len(lm_list) == 0:
             # Jika tangan benar-benar keluar dari jangkauan kamera, matikan semuanya
-            self.stable_pinch_state = False
-            self.frames_since_drop = 0
+            self.is_currently_pinched = False
             return False, None
             
         thumb_tip = lm_list[4]
@@ -41,30 +39,24 @@ class GestureRecognizer:
         else:
             self.smoothed_y = (self.ema_alpha * raw_center_y) + ((1 - self.ema_alpha) * self.smoothed_y)
             
-        raw_is_pinched = pinch_dist < (0.65 * ref_dist)
+        # Kalkulasi rasio jarak pinch terhadap ukuran tangan referensi
+        ratio = pinch_dist / ref_dist if ref_dist > 0 else 1.0
         
-        # LOGIKA HYSTERESIS (ANTI-DROP & ANTI-FLICKER)
-        if raw_is_pinched:
-            # MediaPipe melihat cubitan dengan jelas
-            self.stable_pinch_state = True
-            self.frames_since_drop = 0 # Reset penghitung error
+        # LOGIKA DUAL-THRESHOLD (SCHMITT TRIGGER)
+        if not self.is_currently_pinched:
+            # State "Belum Mencubit" -> Mencari Titik Kunci (ENGAGE)
+            # Syaratnya SANGAT KETAT (< 20%). Jari harus 100% bertemu untuk menyalakan Anchor.
+            if ratio < 0.20:
+                self.is_currently_pinched = True
         else:
-            # MediaPipe gagal melihat cubitan di frame ini
-            if self.stable_pinch_state:
-                # Jika sebelumnya sedang mencubit, JANGAN LANGSUNG DIMATIKAN!
-                self.frames_since_drop += 1
+            # State "Sedang Mencubit" -> Mempertahankan Kuncian / Mencari Titik Lepas (RELEASE)
+            # Syarat matinya LONGGAR (> 50%). Kebal getaran tarik, tapi MATI INSTAN tanpa delay saat jari dibuka.
+            if ratio > 0.50:
+                self.is_currently_pinched = False
                 
-                # Jika hilangnya cubitan sudah terlalu lama (melewati toleransi frame)
-                if self.frames_since_drop >= self.drop_tolerance_frames:
-                    self.stable_pinch_state = False # Baru benar-benar kita matikan
-            else:
-                self.stable_pinch_state = False
-                
-        # Kita kembalikan State yang SUDAH STABIL, bukan tebakan mentah dari frame
-        return self.stable_pinch_state, self.smoothed_y
+        return self.is_currently_pinched, self.smoothed_y
 
     def reset_smoothing(self):
         """Mereset seluruh history ketika tangan tidak ada di layar."""
         self.smoothed_y = None
-        self.stable_pinch_state = False
-        self.frames_since_drop = 0
+        self.is_currently_pinched = False
