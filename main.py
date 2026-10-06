@@ -15,16 +15,17 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     tracker = HandTracker(detection_con=0.8, track_con=0.8)
-    recognizer = GestureRecognizer(ema_alpha=0.3)
-    controller = SystemController(sensitivity=1.5, deadzone=3)
+    recognizer = GestureRecognizer(ema_alpha=0.65)
+    controller = SystemController(sensitivity=0.4, deadzone=20)
 
     print("==================================================")
     print("IRON MAN COMPUTER VISION CONTROLLER AKTIF!")
     print("==================================================")
-    print("Mekanika Dynamic Scrolling (Touch & Drag):")
-    print("  1. Pinch/Cubit (Jempol & Telunjuk) untuk 'Menyentuh' layar.")
-    print("  2. Tahan cubitan dan gerakkan tangan ke Atas/Bawah.")
-    print("  3. Buka cubitan untuk berhenti scrolling.")
+    print("Mekanika Virtual Joystick (Auto-Scroll):")
+    print("  1. Pinch/Cubit untuk mengunci Titik Nol (Anchor).")
+    print("  2. Tarik sedikit ke Atas/Bawah dan TAHAN untuk Auto-Scroll.")
+    print("     (Semakin jauh ditarik, semakin cepat layarnya meluncur)")
+    print("  3. Buka cubitan untuk mengerem (berhenti).")
     print("==================================================")
     print("Fitur Cerdas:")
     print("  - EMA Smoothing Aktif (Anti-Noise Jitter).")
@@ -56,7 +57,16 @@ def main():
                 index_tip = lm_list[8]
                 cx = int((thumb_tip[1] + index_tip[1]) / 2)
                 cy = int((thumb_tip[2] + index_tip[2]) / 2)
-                # Lingkaran hijau menyala menandakan layar sedang ditarik
+                
+                # Visualisasi Titik Jangkar
+                anchor = controller.anchor_y
+                if anchor is not None:
+                    # Gambar titik merah kecil sebagai Anchor Nol (Pusat)
+                    cv2.circle(img, (cx, int(anchor)), 5, (0, 0, 255), cv2.FILLED)
+                    # Gambar garis pembatas (Jarak Joystick)
+                    cv2.line(img, (cx, int(anchor)), (cx, cy), (255, 0, 0), 2)
+                
+                # Lingkaran hijau menyala menandakan posisi jari saat ini
                 cv2.circle(img, (cx, cy), 15, (0, 255, 0), cv2.FILLED) 
         else:
             recognizer.reset_smoothing()

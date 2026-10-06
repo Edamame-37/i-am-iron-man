@@ -1,28 +1,24 @@
 """
 Modul SystemController
-Mengeksekusi pergerakan scroll dinamis ke OS, lengkap dengan sistem kalkulasi Delta Y dan Deadzone.
+Mengeksekusi pergerakan scroll dengan mekanika Virtual Joystick (Auto-Scroll).
 """
 import pyautogui
 import pygetwindow as gw
 
 class SystemController:
-    def __init__(self, sensitivity=1.5, deadzone=15):
+    def __init__(self, sensitivity=0.4, deadzone=20):
+        # Sensitivity jauh lebih kecil karena kini diakumulasi berdasar kecepatan konstan per frame
         self.sensitivity = sensitivity 
-        # Deadzone diperbesar agar Windows mengumpulkan sedikit pergerakan sebelum men-scroll sekaligus
+        # Deadzone cukup besar agar ada area "netral" di tengah jangkar untuk posisi tangan diam
         self.deadzone = deadzone       
         
         pyautogui.FAILSAFE = False
-        
-        # MENGHAPUS JEDA BAWAAN! Inilah penyebab utama lag / frame patah-patah!
         pyautogui.PAUSE = 0
         
         # State Tracking
         self.is_engaged = False
-        self.last_y = None
+        self.anchor_y = None
         self.has_paged_in_current_swipe = False 
-        
-        # Penampung pergerakan. Mengumpulkan tarikan jari sebelum dibuang ke OS.
-        self.scroll_accumulator = 0.0
 
     def is_presentation_active(self):
         """Mengecek apakah jendela aktif saat ini adalah aplikasi presentasi."""
@@ -38,59 +34,64 @@ class SystemController:
 
     def process_dynamic_motion(self, is_pinched, current_y):
         """
-        Mengeksekusi scroll dinamis berdasarkan sistem Touch-and-Drag layaknya Smartphone.
+        Mengeksekusi scroll dinamis berdasarkan sistem Virtual Joystick (Auto-Scroll).
         """
         if current_y is None:
             self.is_engaged = False
-            self.last_y = None
+            self.anchor_y = None
             self.has_paged_in_current_swipe = False
-            self.scroll_accumulator = 0.0
             return "IDLE"
 
         is_presentation = self.is_presentation_active()
 
         if is_pinched:
             if not self.is_engaged:
+                # Kunci Titik Nol (Anchor) pada frame pertama cubitan
                 self.is_engaged = True
-                self.last_y = current_y
+                self.anchor_y = current_y 
                 self.has_paged_in_current_swipe = False
-                self.scroll_accumulator = 0.0
-                return "ENGAGED (TOUCH)"
+                return "ENGAGED (ANCHOR LOCKED)"
             else:
-                delta_y = current_y - self.last_y
-                self.last_y = current_y # Selalu perbarui titik referensi Y
+                # Menghitung seberapa jauh tangan menyimpang dari Titik Nol
+                offset_y = current_y - self.anchor_y
                 
                 if is_presentation:
+                    # Mode Presentasi tetap berupa sentuhan statis (Swipe 1 kali)
                     swipe_threshold = 40 
-                    self.scroll_accumulator += delta_y
-                    
                     if not self.has_paged_in_current_swipe:
-                        if self.scroll_accumulator < -swipe_threshold:
+                        if offset_y < -swipe_threshold:
                             pyautogui.press('pagedown')
                             self.has_paged_in_current_swipe = True
                             return "SWIPED: NEXT SLIDE"
-                        elif self.scroll_accumulator > swipe_threshold:
+                        elif offset_y > swipe_threshold:
                             pyautogui.press('pageup')
                             self.has_paged_in_current_swipe = True
                             return "SWIPED: PREV SLIDE"
                 else:
-                    self.scroll_accumulator += delta_y
-                    
-                    # Jika tarikan tangan terkumpul sudah melewati batas deadzone
-                    if abs(self.scroll_accumulator) >= self.deadzone:
-                        scroll_amount = int(self.scroll_accumulator * self.sensitivity)
+                    # JOYSTICK AUTO-SCROLL MODE
+                    # Jika penyimpangan tangan melewati zona netral (Deadzone)
+                    if abs(offset_y) > self.deadzone:
+                        # Kecepatan dihitung berdasar jauhnya tangan dari deadzone
+                        speed = int((abs(offset_y) - self.deadzone) * self.sensitivity)
                         
-                        # Eksekusi scroll! (pyautogui.PAUSE=0 membuatnya instan)
-                        pyautogui.scroll(scroll_amount)
-                        
-                        # Kosongkan akumulator untuk mulai menghitung tarikan berikutnya
-                        self.scroll_accumulator = 0.0
-                        return f"SCROLLING ({scroll_amount})"
+                        # Set minimal kecepatan agar tetap meluncur lambat jika digeser sangat sedikit
+                        if speed < 1:
+                            speed = 1
+                            
+                        if offset_y < 0:
+                            # Tangan berada di ATAS titik jangkar -> Gulung layar ke ATAS
+                            # (Kursor/pandangan ditarik ke atas dokumen)
+                            pyautogui.scroll(speed)
+                            return f"AUTO-SCROLL UP ({speed})"
+                        else:
+                            # Tangan berada di BAWAH titik jangkar -> Gulung layar ke BAWAH
+                            pyautogui.scroll(-speed)
+                            return f"AUTO-SCROLL DOWN ({speed})"
                 
-                return "HOLDING"
+                return "HOLDING ANCHOR"
         else:
+            # Cubitan dilepas (Rem/Stop)
             self.is_engaged = False
-            self.last_y = None
+            self.anchor_y = None
             self.has_paged_in_current_swipe = False
-            self.scroll_accumulator = 0.0
             return "IDLE"
