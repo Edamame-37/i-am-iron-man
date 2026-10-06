@@ -49,8 +49,8 @@ class GestureRecognizer:
         fingers = self.get_fingers_up(lm_list)
         
         # Aturan Gestur Scroll Up (V-Sign): 
-        # Jari Telunjuk [1] dan Tengah [2] terbuka. Jempol, Manis, Kelingking tertutup.
-        if fingers[0] == 0 and fingers[1] == 1 and fingers[2] == 1 and fingers[3] == 0 and fingers[4] == 0:
+        # Jari Telunjuk [1] dan Tengah [2] terbuka. Manis, Kelingking tertutup. Jempol bebas.
+        if fingers[1] == 1 and fingers[2] == 1 and fingers[3] == 0 and fingers[4] == 0:
             return "SCROLL_UP"
         
         # Aturan Gestur Scroll Down (Menunjuk):
