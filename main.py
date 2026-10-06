@@ -29,7 +29,7 @@ def main():
     print("IRON MAN COMPUTER VISION CONTROLLER AKTIF!")
     print("==================================================")
     print("Gestur Jari (Versi Klasik):")
-    print("  - Jari Kelingking                  : Scroll Atas")
+    print("  - V Sign (Telunjuk & Tengah)   : Scroll Atas")
     print("  - Menunjuk (Hanya Telunjuk)  : Scroll Bawah")
     print("  - Tangan Mengepal/Terbuka    : Berhenti (Netral)")
     print("==================================================")
