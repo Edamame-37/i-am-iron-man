@@ -48,9 +48,9 @@ class GestureRecognizer:
             
         fingers = self.get_fingers_up(lm_list)
         
-        # Aturan Gestur Scroll Up (Jari Tengah / Middle Finger): 
-        # Jari Tengah [2] terbuka. Jempol, Telunjuk, Manis, Kelingking tertutup.
-        if fingers[0] == 0 and fingers[1] == 0 and fingers[2] == 1 and fingers[3] == 0 and fingers[4] == 0:
+        # Aturan Gestur Scroll Up (Kelingking): 
+        # Jari Kelingking [4] terbuka. Jempol, Telunjuk, Tengah, Manis tertutup.
+        if fingers[0] == 0 and fingers[1] == 0 and fingers[2] == 0 and fingers[3] == 0 and fingers[4] == 1:
             return "SCROLL_UP"
         
         # Aturan Gestur Scroll Down (Menunjuk):
