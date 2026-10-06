@@ -1,62 +1,54 @@
 """
 Modul GestureRecognizer
-Bertugas untuk menganalisis landmark dari tangan dan menentukan kombinasi jari.
+Menganalisis pergerakan dinamis (Dynamic Motion) dan status sentuhan (Pinch).
+Dilengkapi dengan algoritma Exponential Moving Average (EMA) untuk membersihkan noise.
 """
 import math
 
 class GestureRecognizer:
-    def __init__(self):
-        # ID ujung jari (Tip) pada MediaPipe:
-        # 4: Jempol, 8: Telunjuk, 12: Tengah, 16: Manis, 20: Kelingking
-        self.tip_ids = [4, 8, 12, 16, 20]
-
-    def get_fingers_up(self, lm_list):
+    def __init__(self, ema_alpha=0.3):
+        # alpha untuk EMA (0.0 sampai 1.0). 
+        # Semakin kecil, semakin mulus tapi semakin lambat (delay) merespons.
+        self.ema_alpha = ema_alpha
+        self.smoothed_y = None
+        
+    def get_pinch_state(self, lm_list):
         """
-        Menganalisis koordinat landmark dan mengembalikan list integer (1=buka, 0=tutup)
-        untuk kelima jari berurutan: [Jempol, Telunjuk, Tengah, Manis, Kelingking].
-        Menghitung berdasarkan jarak Euclidean (tahan terhadap rotasi tangan).
+        Mendeteksi apakah pengguna sedang melakukan Pinch (Cubitan Jempol & Telunjuk)
+        dan mengembalikan koordinat Y yang sudah diperhalus dari cubitan tersebut.
         """
-        fingers = []
         if len(lm_list) == 0:
-            return fingers
-
+            return False, None
+            
+        # Titik Landmark yang relevan
+        thumb_tip = lm_list[4]
+        index_tip = lm_list[8]
         wrist = lm_list[0]
-        for id in range(5):
-            tip = lm_list[self.tip_ids[id]]
-            # Ambil sendi 2 tingkat di bawah ujung jari sebagai pembanding
-            pip = lm_list[self.tip_ids[id] - 2]
+        index_base = lm_list[5] # Pangkal telunjuk
+        
+        # 1. Menghitung jarak cubitan
+        pinch_dist = math.hypot(index_tip[1] - thumb_tip[1], index_tip[2] - thumb_tip[2])
+        
+        # 2. Mencari Jarak Referensi (Pergelangan ke Pangkal Telunjuk)
+        # Digunakan agar sistem mengenali skala telapak tangan. 
+        # Jadi seberapa pun jauh/dekat tangan ke kamera, sistem cubitan tetap akurat.
+        ref_dist = math.hypot(index_base[1] - wrist[1], index_base[2] - wrist[2])
+        
+        # 3. Menentukan Sumbu Y Tengah Cubitan (Raw)
+        raw_center_y = (thumb_tip[2] + index_tip[2]) / 2
+        
+        # 4. Memproses EMA Filter (Menghilangkan Micro-Jitters)
+        if self.smoothed_y is None:
+            self.smoothed_y = raw_center_y
+        else:
+            self.smoothed_y = (self.ema_alpha * raw_center_y) + ((1 - self.ema_alpha) * self.smoothed_y)
             
-            # Hitung jarak ujung jari ke pergelangan vs sendi tengah ke pergelangan
-            dist_tip = math.hypot(tip[1] - wrist[1], tip[2] - wrist[2])
-            dist_pip = math.hypot(pip[1] - wrist[1], pip[2] - wrist[2])
-            
-            # Jika ujung jari lebih jauh dari pergelangan, berarti jari sedang diluruskan (terbuka)
-            if dist_tip > dist_pip:
-                fingers.append(1)
-            else:
-                fingers.append(0)
+        # 5. Threshold Cubitan
+        # Jika jarak cubitan kurang dari 35% ukuran tangan referensi, maka dianggap mencubit ("Engaged")
+        is_pinched = pinch_dist < (0.35 * ref_dist)
+        
+        return is_pinched, self.smoothed_y
 
-        return fingers
-
-    def recognize(self, lm_list):
-        """
-        Menentukan gestur berdasarkan jari-jari yang terbuka.
-        Mengembalikan string berisi nama gestur.
-        """
-        if len(lm_list) == 0:
-            return "UNKNOWN"
-            
-        fingers = self.get_fingers_up(lm_list)
-        
-        # Aturan Gestur Scroll Up (V-Sign): 
-        # Jari Telunjuk [1] dan Tengah [2] terbuka. Manis, Kelingking tertutup. Jempol bebas.
-        if fingers[1] == 1 and fingers[2] == 1 and fingers[3] == 0 and fingers[4] == 0:
-            return "SCROLL_UP"
-        
-        # Aturan Gestur Scroll Down (Menunjuk):
-        # Hanya Telunjuk [1] yang terbuka. Tengah, Manis, Kelingking tertutup.
-        if fingers[1] == 1 and fingers[2] == 0 and fingers[3] == 0 and fingers[4] == 0:
-            return "SCROLL_DOWN"
-        
-        # Selain itu (misalnya kelima jari terbuka, atau tangan mengepal penuh)
-        return "NEUTRAL"
+    def reset_smoothing(self):
+        """Mereset history filter ketika tangan keluar dari jangkauan kamera."""
+        self.smoothed_y = None

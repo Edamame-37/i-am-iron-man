@@ -1,72 +1,90 @@
 """
 Modul SystemController
-Bertugas untuk mengeksekusi perintah sistem ke OS, deteksi window presentasi, dan debouncing.
+Mengeksekusi pergerakan scroll dinamis ke OS, lengkap dengan sistem kalkulasi Delta Y dan Deadzone.
 """
 import pyautogui
 import pygetwindow as gw
 
 class SystemController:
-    def __init__(self, scroll_speed=40):
-        self.scroll_speed = scroll_speed
+    def __init__(self, sensitivity=1.2, deadzone=4):
+        # Pengaturan untuk gaya scroll dinamis
+        self.sensitivity = sensitivity # Pengali kecepatan scroll
+        self.deadzone = deadzone       # Batas minimum piksel untuk memicu pergeseran layar
+        
         pyautogui.FAILSAFE = False
-        self.previous_gesture = "NEUTRAL"
+        
+        # State Tracking
+        self.is_engaged = False
+        self.last_y = None
+        self.has_paged_in_current_swipe = False # Untuk menjaga satu swipe = satu halaman presentasi
 
     def is_presentation_active(self):
-        """Mengecek apakah jendela OS aktif saat ini adalah aplikasi presentasi."""
+        """Mengecek apakah jendela aktif saat ini adalah aplikasi slide presentasi."""
         try:
             window = gw.getActiveWindow()
             if window and window.title:
                 title = window.title.lower()
-                # Kata kunci untuk mengenali aplikasi presentasi yang butuh "Paging Mode"
                 keywords = ["powerpoint", "slide", "presentasi", "presentation", "canva"]
-                for kw in keywords:
-                    if kw in title:
-                        return True
+                return any(kw in title for kw in keywords)
         except Exception:
-            pass # Abaikan dengan aman jika akses pembacaan window ditolak sistem
+            pass
         return False
 
-    def scroll_up(self):
-        pyautogui.scroll(self.scroll_speed)
-
-    def scroll_down(self):
-        pyautogui.scroll(-self.scroll_speed)
-
-    def page_up(self):
-        """Navigasi slide ke atas (Sebelumnya)."""
-        pyautogui.press('pageup')
-
-    def page_down(self):
-        """Navigasi slide ke bawah (Selanjutnya)."""
-        pyautogui.press('pagedown')
-
-    def execute_gesture(self, current_gesture):
+    def process_dynamic_motion(self, is_pinched, current_y):
         """
-        Mengeksekusi aksi berdasarkan gestur yang dibaca.
-        Menggunakan sistem Debounce (Anti-Spam) untuk membatasi eksekusi aksi berulang pada presentasi.
+        Mengeksekusi scroll dinamis berdasarkan sistem Touch-and-Drag layaknya Smartphone.
         """
+        # Jika tidak ada tangan
+        if current_y is None:
+            self.is_engaged = False
+            self.last_y = None
+            self.has_paged_in_current_swipe = False
+            return "IDLE"
+
         is_presentation = self.is_presentation_active()
 
-        # DEBOUNCE: Jika gestur yang masuk BERBEDA dari frame sebelumnya (Baru dipicu)
-        if current_gesture != self.previous_gesture:
-            if current_gesture == "SCROLL_UP":
+        # Mekanika Interaksi Cubit (Pinch = Sentuh Layar)
+        if is_pinched:
+            if not self.is_engaged:
+                # Titik Pertama Kali Sentuh (Touch Down)
+                self.is_engaged = True
+                self.last_y = current_y
+                self.has_paged_in_current_swipe = False
+                return "ENGAGED (TOUCH)"
+            else:
+                # Sedang Menarik Layar (Drag)
+                delta_y = current_y - self.last_y
+                
+                # Memilah Eksekusi: Presentasi (Paging) vs Normal (Continuous)
                 if is_presentation:
-                    self.page_up()
+                    swipe_threshold = 30 # Jarak tarikan tangan minimal untuk ganti slide
+                    
+                    if not self.has_paged_in_current_swipe:
+                        if delta_y < -swipe_threshold:
+                            pyautogui.press('pagedown')
+                            self.has_paged_in_current_swipe = True
+                            return "SWIPED: NEXT SLIDE"
+                        elif delta_y > swipe_threshold:
+                            pyautogui.press('pageup')
+                            self.has_paged_in_current_swipe = True
+                            return "SWIPED: PREV SLIDE"
                 else:
-                    self.scroll_up()
-            elif current_gesture == "SCROLL_DOWN":
-                if is_presentation:
-                    self.page_down()
-                else:
-                    self.scroll_down()
+                    # Normal Scroll (Proporsional dengan seberapa jauh menarik tangan)
+                    if abs(delta_y) > self.deadzone:
+                        # Di komputer, menarik tangan ke Atas (delta Y negatif) harus men-scroll ke BAWAH
+                        # Persis seperti cara kerja layar sentuh handphone.
+                        # pyautogui.scroll(nilai negatif) berfungsi untuk men-scroll turun.
+                        scroll_amount = int(delta_y * self.sensitivity)
+                        pyautogui.scroll(scroll_amount)
+                        
+                        # Setel patokan (anchor) baru hanya jika berhasil melewati deadzone
+                        self.last_y = current_y
+                        return f"SCROLLING ({scroll_amount})"
+                
+                return "HOLDING"
         else:
-            # Jika gestur yang ditahan SAMA dengan frame sebelumnya (Pengguna sedang menahan pose):
-            # Kita HANYA mengizinkan aksi berulang untuk Scroll Kontinu,
-            # dengan syarat jendela aktif saat ini BUKAN aplikasi presentasi.
-            if current_gesture == "SCROLL_UP" and not is_presentation:
-                self.scroll_up()
-            elif current_gesture == "SCROLL_DOWN" and not is_presentation:
-                self.scroll_down()
-
-        # Simpan state gestur saat ini sebagai patokan di loop berikutnya
-        self.previous_gesture = current_gesture
+            # Jari Diangkat (Release)
+            self.is_engaged = False
+            self.last_y = None
+            self.has_paged_in_current_swipe = False
+            return "IDLE"
