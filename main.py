@@ -20,9 +20,7 @@ def main():
 
     window_name = "Iron Man Vision Controller"
     
-    # MENGATUR UKURAN JENDELA AGAR BISA DI-RESIZE BEBAS
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-    # MEMBUAT JENDELA "ALWAYS ON TOP" AGAR TIDAK TENGGELAM OLEH APLIKASI LAIN
     cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
     show_window = True
 
@@ -30,13 +28,14 @@ def main():
     print("IRON MAN COMPUTER VISION CONTROLLER AKTIF!")
     print("==================================================")
     print("Mekanika Virtual Joystick (Auto-Scroll):")
-    print("  1. Pinch/Cubit untuk mengunci Titik Nol (Anchor).")
-    print("  2. Tarik sedikit ke Atas/Bawah dan TAHAN untuk Auto-Scroll.")
-    print("     (Semakin jauh ditarik, semakin cepat layarnya meluncur)")
-    print("  3. Buka cubitan untuk mengerem (berhenti).")
+    print("  1. Acungkan JARI TELUNJUK untuk mengunci Titik Nol (Anchor).")
+    print("  2. Tarik Telunjuk ke Atas/Bawah dan TAHAN posisinya.")
+    print("     - Telunjuk ke ATAS = Scroll layar ke ATAS")
+    print("     - Telunjuk ke BAWAH = Scroll layar ke BAWAH")
+    print("  3. Buka seluruh tangan (Rentangkan Jari) untuk berhenti/mengerem.")
     print("==================================================")
     print("Fitur UI & Mode Latar Belakang:")
-    print("  - Jendela Kamera bisa ditarik/di-resize (Resizable).")
+    print("  - Jendela Kamera Selalu di Atas (Always on Top).")
     print("  - Klik silang 'X' untuk masuk Mode Latar Belakang (Headless).")
     print("  - Tekan 'q' pada jendela ATAU Ctrl+C di terminal untuk keluar.")
     print("==================================================")
@@ -45,8 +44,6 @@ def main():
 
     try:
         while True:
-            # cap.read() akan memblokir loop sesuai kecepatan kamera (FPS),
-            # sehingga performa pelacakan tetap konstan 100% stabil meski jendela tertutup
             success, img = cap.read()
             if not success:
                 break
@@ -58,17 +55,19 @@ def main():
             status_text = "NO HAND"
 
             if len(lm_list) != 0:
-                is_pinched, current_y = recognizer.get_pinch_state(lm_list)
-                status_text = controller.process_dynamic_motion(is_pinched, current_y)
+                # Menggunakan deteksi gestur Telunjuk
+                is_active, current_y = recognizer.get_joystick_state(lm_list)
+                status_text = controller.process_dynamic_motion(is_active, current_y)
                 
-                if is_pinched:
-                    thumb_tip = lm_list[4]
+                if is_active:
+                    # Titik koordinat adalah ujung Telunjuk
                     index_tip = lm_list[8]
-                    cx = int((thumb_tip[1] + index_tip[1]) / 2)
-                    cy = int((thumb_tip[2] + index_tip[2]) / 2)
+                    cx = index_tip[1]
+                    cy = index_tip[2]
                     
                     anchor = controller.anchor_y
                     if anchor is not None:
+                        # Jangkar divisualisasikan dari ujung telunjuk
                         cv2.circle(img, (cx, int(anchor)), 5, (0, 0, 255), cv2.FILLED)
                         cv2.line(img, (cx, int(anchor)), (cx, cy), (255, 0, 0), 2)
                     
@@ -81,20 +80,17 @@ def main():
             fps = 1 / (c_time - p_time) if (c_time - p_time) > 0 else 0
             p_time = c_time
 
-            # LOGIKA JENDELA DAN HEADLESS MODE
             if show_window:
-                # Cek secara cerdas apakah pengguna mengeklik tombol 'X' merah pada jendela Windows
                 try:
                     if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
                         show_window = False
-                        cv2.destroyWindow(window_name) # Matikan grafis untuk menghemat RAM
+                        cv2.destroyWindow(window_name)
                         print("\n[INFO] Jendela ditutup. Sistem berjalan mulus di LATAR BELAKANG (Headless Mode).")
                         print("[INFO] Tekan 'Ctrl + C' di terminal ini untuk mematikan program sepenuhnya.")
                 except cv2.error:
                     show_window = False
                     
             if show_window:
-                # Cetak Teks dan Tampilkan Gambar BILA jendela masih terbuka
                 cv2.putText(img, f'FPS: {int(fps)}', (10, 30), cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 2)
                 cv2.putText(img, f'Status: {status_text}', (10, 70), cv2.FONT_HERSHEY_PLAIN, 2, (0, 255, 0), 2)
                 
@@ -104,9 +100,6 @@ def main():
                 if key == ord('q'):
                     break
             else:
-                # MODE LATAR BELAKANG (HEADLESS)
-                # Lewati semua proses rendering gambar (cv2.imshow / waitKey).
-                # Program akan terus berjalan dengan FPS kamera fisik secara sempurna!
                 pass
 
     except KeyboardInterrupt:

@@ -8,7 +8,6 @@ import pygetwindow as gw
 class SystemController:
     def __init__(self, sensitivity=0.4, deadzone=30):
         self.sensitivity = sensitivity 
-        # Deadzone dilebarkan dari 20 ke 30 agar tangan yang diam / tremor alami tidak tereksekusi
         self.deadzone = deadzone       
         
         pyautogui.FAILSAFE = False
@@ -21,10 +20,9 @@ class SystemController:
         
         # Filter Penghalus Kecepatan (Speed EMA)
         self.smoothed_speed = 0.0
-        self.speed_ema_alpha = 0.3 # 0.3 berarti kecepatan berganti secara perlahan (akselerasi mulus)
+        self.speed_ema_alpha = 0.3
 
     def is_presentation_active(self):
-        """Mengecek apakah jendela aktif saat ini adalah aplikasi presentasi."""
         try:
             window = gw.getActiveWindow()
             if window and window.title:
@@ -35,23 +33,19 @@ class SystemController:
             pass
         return False
 
-    def process_dynamic_motion(self, is_pinched, current_y):
-        """
-        Mengeksekusi scroll dinamis berdasarkan sistem Virtual Joystick (Auto-Scroll).
-        Dilengkapi dengan akselerator kecepatan anti-getar.
-        """
+    def process_dynamic_motion(self, is_active, current_y):
         if current_y is None:
             self._reset_state()
             return "IDLE"
 
         is_presentation = self.is_presentation_active()
 
-        if is_pinched:
+        if is_active:
             if not self.is_engaged:
                 self.is_engaged = True
                 self.anchor_y = current_y 
                 self.has_paged_in_current_swipe = False
-                self.smoothed_speed = 0.0 # Reset kecepatan saat kunci anchor
+                self.smoothed_speed = 0.0
                 return "ENGAGED (ANCHOR LOCKED)"
             else:
                 offset_y = current_y - self.anchor_y
@@ -68,30 +62,23 @@ class SystemController:
                             self.has_paged_in_current_swipe = True
                             return "SWIPED: PREV SLIDE"
                 else:
-                    # JOYSTICK AUTO-SCROLL MODE
                     if abs(offset_y) > self.deadzone:
-                        # Dapatkan kecepatan mentah (Raw Speed)
                         raw_speed = (abs(offset_y) - self.deadzone) * self.sensitivity
-                        
-                        # PENYARINGAN SPEED (ANTI-NOISE):
-                        # Rumus EMA ini membuat pergantian kecepatan berjalan bertahap.
-                        # Hentakan kecepatan akibat tangan bergetar akan dinetralkan.
                         self.smoothed_speed = (self.speed_ema_alpha * raw_speed) + ((1 - self.speed_ema_alpha) * self.smoothed_speed)
                         
                         final_speed = int(self.smoothed_speed)
-                        
                         if final_speed < 1:
                             final_speed = 1
                             
+                        # Logika Arah (Sesuai Permintaan)
+                        # offset_y < 0 artinya Telunjuk ditarik ke ATAS (karena Y=0 ada di atas layar).
                         if offset_y < 0:
-                            pyautogui.scroll(final_speed)
+                            pyautogui.scroll(final_speed) # Scroll layar ke ATAS
                             return f"AUTO-SCROLL UP ({final_speed})"
                         else:
-                            pyautogui.scroll(-final_speed)
+                            pyautogui.scroll(-final_speed) # Scroll layar ke BAWAH
                             return f"AUTO-SCROLL DOWN ({final_speed})"
                     else:
-                        # Jika kembali masuk ke dalam area Deadzone (Tangan direnggangkan balik ke tengah),
-                        # turunkan kecepatan ke 0 secara mulus (Pengereman Otomatis)
                         self.smoothed_speed = (1 - self.speed_ema_alpha) * self.smoothed_speed
                 
                 return "HOLDING ANCHOR"
@@ -100,7 +87,6 @@ class SystemController:
             return "IDLE"
 
     def _reset_state(self):
-        """Mereset ke posisi netral ketika tangan dilepas/menghilang"""
         self.is_engaged = False
         self.anchor_y = None
         self.has_paged_in_current_swipe = False

@@ -1,7 +1,7 @@
 """
 Modul GestureRecognizer
-Menganalisis pergerakan dinamis (Dynamic Motion) dan status sentuhan (Pinch).
-Dilengkapi dengan Exponential Moving Average (EMA) dan mekanisme Schmitt Trigger (Batas Ganda).
+Menganalisis pergerakan dinamis berdasarkan gestur Jari Telunjuk.
+Dilengkapi dengan Exponential Moving Average (EMA) dan mekanisme State Machine.
 """
 import math
 
@@ -9,54 +9,77 @@ class GestureRecognizer:
     def __init__(self, ema_alpha=0.65):
         self.ema_alpha = ema_alpha
         self.smoothed_y = None
+        self.is_currently_engaged = False
         
-        # Schmitt Trigger State
-        self.is_currently_pinched = False
+    def get_fingers_up(self, lm_list):
+        """Mendeteksi jari mana saja yang sedang terbuka berdasarkan jarak engsel."""
+        fingers = []
+        if len(lm_list) == 0:
+            return fingers
+
+        # ID Landmark Ujung dan Pangkal Jari (Telunjuk, Tengah, Manis, Kelingking)
+        tip_ids = [8, 12, 16, 20]
+        pip_ids = [6, 10, 14, 18]
+        wrist = lm_list[0]
         
-    def get_pinch_state(self, lm_list):
+        # Jempol (index 0) kita jadikan 0 saja karena tidak terlalu krusial di logika ini
+        fingers.append(0) 
+
+        for i in range(4):
+            tip = lm_list[tip_ids[i]]
+            pip = lm_list[pip_ids[i]]
+            
+            dist_tip = math.hypot(tip[1] - wrist[1], tip[2] - wrist[2])
+            dist_pip = math.hypot(pip[1] - wrist[1], pip[2] - wrist[2])
+            
+            # Jika jarak ujung jari ke pergelangan lebih jauh dari jarak pangkal ke pergelangan, 
+            # berarti jari sedang terentang/terbuka.
+            if dist_tip > dist_pip:
+                fingers.append(1) # Terbuka
+            else:
+                fingers.append(0) # Tertutup
+                
+        return fingers
+
+    def get_joystick_state(self, lm_list):
         """
-        Mendeteksi apakah pengguna sedang melakukan Pinch.
-        Menggunakan Dual-Threshold agar jari harus benar-benar menyentuh untuk mulai,
-        namun rilis seketika (tanpa delay) saat dibuka lebar.
+        Mendeteksi apakah pengguna sedang mengacungkan telunjuk (Engage) atau membuka tangan (Release).
+        Menggunakan Dual-Threshold berbasis status jari.
         """
         if len(lm_list) == 0:
-            # Jika tangan benar-benar keluar dari jangkauan kamera, matikan semuanya
-            self.is_currently_pinched = False
+            self.is_currently_engaged = False
             return False, None
             
-        thumb_tip = lm_list[4]
-        index_tip = lm_list[8]
-        wrist = lm_list[0]
-        index_base = lm_list[5]
-        
-        pinch_dist = math.hypot(index_tip[1] - thumb_tip[1], index_tip[2] - thumb_tip[2])
-        ref_dist = math.hypot(index_base[1] - wrist[1], index_base[2] - wrist[2])
-        raw_center_y = (thumb_tip[2] + index_tip[2]) / 2
-        
-        # Penghalus Koordinat Y (Meredam getaran mikro)
-        if self.smoothed_y is None:
-            self.smoothed_y = raw_center_y
-        else:
-            self.smoothed_y = (self.ema_alpha * raw_center_y) + ((1 - self.ema_alpha) * self.smoothed_y)
+        fingers = self.get_fingers_up(lm_list)
+        if len(fingers) < 5:
+            return self.is_currently_engaged, self.smoothed_y
             
-        # Kalkulasi rasio jarak pinch terhadap ukuran tangan referensi
-        ratio = pinch_dist / ref_dist if ref_dist > 0 else 1.0
+        # Sumbu Y untuk pergerakan diambil murni dari koordinat Ujung Jari Telunjuk
+        index_tip = lm_list[8]
+        raw_y = index_tip[2]
         
-        # LOGIKA DUAL-THRESHOLD (SCHMITT TRIGGER)
-        if not self.is_currently_pinched:
-            # State "Belum Mencubit" -> Mencari Titik Kunci (ENGAGE)
-            # Syaratnya SANGAT KETAT (< 20%). Jari harus 100% bertemu untuk menyalakan Anchor.
-            if ratio < 0.20:
-                self.is_currently_pinched = True
+        # Penghalus Koordinat Y (Meredam getaran mikro telunjuk)
+        if self.smoothed_y is None:
+            self.smoothed_y = raw_y
         else:
-            # State "Sedang Mencubit" -> Mempertahankan Kuncian / Mencari Titik Lepas (RELEASE)
-            # Syarat matinya SANGAT LONGGAR (> 80%). Kebal ilusi optik kamera saat tangan diputar.
-            if ratio > 0.80:
-                self.is_currently_pinched = False
+            self.smoothed_y = (self.ema_alpha * raw_y) + ((1 - self.ema_alpha) * self.smoothed_y)
+            
+        # LOGIKA STATE MACHINE BERBASIS JARI
+        if not self.is_currently_engaged:
+            # Mode "Belum Aktif" -> Mencari Titik Kunci (ENGAGE)
+            # Syaratnya KETAT: Telunjuk terbuka, TAPI jari Tengah, Manis, Kelingking HARUS tertutup (menggenggam).
+            if fingers[1] == 1 and fingers[2] == 0 and fingers[3] == 0 and fingers[4] == 0:
+                self.is_currently_engaged = True
+        else:
+            # Mode "Sedang Aktif" -> Mempertahankan Kuncian / Mencari Titik Lepas (RELEASE)
+            # Syarat matinya LONGGAR: Jika Jari Tengah dan Manis mulai dibuka lebar (Tangan Netral).
+            # Ini memberikan respons pengereman seketika saat tangan dibuka.
+            if fingers[2] == 1 and fingers[3] == 1:
+                self.is_currently_engaged = False
                 
-        return self.is_currently_pinched, self.smoothed_y
+        return self.is_currently_engaged, self.smoothed_y
 
     def reset_smoothing(self):
         """Mereset seluruh history ketika tangan tidak ada di layar."""
         self.smoothed_y = None
-        self.is_currently_pinched = False
+        self.is_currently_engaged = False
