@@ -6,20 +6,26 @@ import pyautogui
 import pygetwindow as gw
 
 class SystemController:
-    def __init__(self, sensitivity=1.2, deadzone=4):
-        # Pengaturan untuk gaya scroll dinamis
-        self.sensitivity = sensitivity # Pengali kecepatan scroll
-        self.deadzone = deadzone       # Batas minimum piksel untuk memicu pergeseran layar
+    def __init__(self, sensitivity=1.5, deadzone=15):
+        self.sensitivity = sensitivity 
+        # Deadzone diperbesar agar Windows mengumpulkan sedikit pergerakan sebelum men-scroll sekaligus
+        self.deadzone = deadzone       
         
         pyautogui.FAILSAFE = False
+        
+        # MENGHAPUS JEDA BAWAAN! Inilah penyebab utama lag / frame patah-patah!
+        pyautogui.PAUSE = 0
         
         # State Tracking
         self.is_engaged = False
         self.last_y = None
-        self.has_paged_in_current_swipe = False # Untuk menjaga satu swipe = satu halaman presentasi
+        self.has_paged_in_current_swipe = False 
+        
+        # Penampung pergerakan. Mengumpulkan tarikan jari sebelum dibuang ke OS.
+        self.scroll_accumulator = 0.0
 
     def is_presentation_active(self):
-        """Mengecek apakah jendela aktif saat ini adalah aplikasi slide presentasi."""
+        """Mengecek apakah jendela aktif saat ini adalah aplikasi presentasi."""
         try:
             window = gw.getActiveWindow()
             if window and window.title:
@@ -34,57 +40,57 @@ class SystemController:
         """
         Mengeksekusi scroll dinamis berdasarkan sistem Touch-and-Drag layaknya Smartphone.
         """
-        # Jika tidak ada tangan
         if current_y is None:
             self.is_engaged = False
             self.last_y = None
             self.has_paged_in_current_swipe = False
+            self.scroll_accumulator = 0.0
             return "IDLE"
 
         is_presentation = self.is_presentation_active()
 
-        # Mekanika Interaksi Cubit (Pinch = Sentuh Layar)
         if is_pinched:
             if not self.is_engaged:
-                # Titik Pertama Kali Sentuh (Touch Down)
                 self.is_engaged = True
                 self.last_y = current_y
                 self.has_paged_in_current_swipe = False
+                self.scroll_accumulator = 0.0
                 return "ENGAGED (TOUCH)"
             else:
-                # Sedang Menarik Layar (Drag)
                 delta_y = current_y - self.last_y
+                self.last_y = current_y # Selalu perbarui titik referensi Y
                 
-                # Memilah Eksekusi: Presentasi (Paging) vs Normal (Continuous)
                 if is_presentation:
-                    swipe_threshold = 30 # Jarak tarikan tangan minimal untuk ganti slide
+                    swipe_threshold = 40 
+                    self.scroll_accumulator += delta_y
                     
                     if not self.has_paged_in_current_swipe:
-                        if delta_y < -swipe_threshold:
+                        if self.scroll_accumulator < -swipe_threshold:
                             pyautogui.press('pagedown')
                             self.has_paged_in_current_swipe = True
                             return "SWIPED: NEXT SLIDE"
-                        elif delta_y > swipe_threshold:
+                        elif self.scroll_accumulator > swipe_threshold:
                             pyautogui.press('pageup')
                             self.has_paged_in_current_swipe = True
                             return "SWIPED: PREV SLIDE"
                 else:
-                    # Normal Scroll (Proporsional dengan seberapa jauh menarik tangan)
-                    if abs(delta_y) > self.deadzone:
-                        # Di komputer, menarik tangan ke Atas (delta Y negatif) harus men-scroll ke BAWAH
-                        # Persis seperti cara kerja layar sentuh handphone.
-                        # pyautogui.scroll(nilai negatif) berfungsi untuk men-scroll turun.
-                        scroll_amount = int(delta_y * self.sensitivity)
+                    self.scroll_accumulator += delta_y
+                    
+                    # Jika tarikan tangan terkumpul sudah melewati batas deadzone
+                    if abs(self.scroll_accumulator) >= self.deadzone:
+                        scroll_amount = int(self.scroll_accumulator * self.sensitivity)
+                        
+                        # Eksekusi scroll! (pyautogui.PAUSE=0 membuatnya instan)
                         pyautogui.scroll(scroll_amount)
                         
-                        # Setel patokan (anchor) baru hanya jika berhasil melewati deadzone
-                        self.last_y = current_y
+                        # Kosongkan akumulator untuk mulai menghitung tarikan berikutnya
+                        self.scroll_accumulator = 0.0
                         return f"SCROLLING ({scroll_amount})"
                 
                 return "HOLDING"
         else:
-            # Jari Diangkat (Release)
             self.is_engaged = False
             self.last_y = None
             self.has_paged_in_current_swipe = False
+            self.scroll_accumulator = 0.0
             return "IDLE"
