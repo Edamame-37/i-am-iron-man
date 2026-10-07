@@ -6,9 +6,9 @@ import pyautogui
 import pygetwindow as gw
 
 class SystemController:
-    # Deadzone diturunkan menjadi 15 karena angka kemiringan (tilt) lebih kecil dari piksel layar penuh
-    # Sensitivitas dinaikkan menjadi 0.7 agar respons tuas gas lebih gesit
-    def __init__(self, sensitivity=0.7, deadzone=15):
+    # Deadzone diturunkan secara drastis dari 15 menjadi 5 karena input dari 
+    # 1 Euro Filter sudah suci dari Jitter. Tuas kini jauh lebih sensitif & akurat.
+    def __init__(self, sensitivity=0.8, deadzone=5):
         self.sensitivity = sensitivity 
         self.deadzone = deadzone       
         
@@ -20,7 +20,7 @@ class SystemController:
         self.has_paged_in_current_swipe = False 
         
         self.smoothed_speed = 0.0
-        self.speed_ema_alpha = 0.3
+        self.speed_ema_alpha = 0.4 # Naik dari 0.3, akselerasi lebih responsif
 
     def is_presentation_active(self):
         try:
@@ -34,9 +34,6 @@ class SystemController:
         return False
 
     def process_dynamic_motion(self, is_active, current_tilt):
-        """
-        Mengeksekusi scroll dinamis berdasarkan kemiringan pergelangan (Tilt).
-        """
         if current_tilt is None:
             self._reset_state()
             return "IDLE"
@@ -46,16 +43,14 @@ class SystemController:
         if is_active:
             if not self.is_engaged:
                 self.is_engaged = True
-                self.anchor_tilt = current_tilt # Mengunci kemiringan dasar
+                self.anchor_tilt = current_tilt 
                 self.has_paged_in_current_swipe = False
                 self.smoothed_speed = 0.0
                 return "ENGAGED (TILT LOCKED)"
             else:
-                # Penyimpangan kemiringan pergelangan
                 offset_tilt = current_tilt - self.anchor_tilt
                 
                 if is_presentation:
-                    # Swipe mode untuk presentasi
                     swipe_threshold = 25 
                     if not self.has_paged_in_current_swipe:
                         if offset_tilt < -swipe_threshold:
@@ -75,16 +70,13 @@ class SystemController:
                         if final_speed < 1:
                             final_speed = 1
                             
-                        # offset_tilt < 0 berarti pergelangan ditengadahkan ke ATAS
-                        # offset_tilt > 0 berarti pergelangan ditekuk/ditundukkan ke BAWAH
                         if offset_tilt < 0:
-                            pyautogui.scroll(final_speed) # Scroll layar ke ATAS
+                            pyautogui.scroll(final_speed) 
                             return f"AUTO-SCROLL UP ({final_speed})"
                         else:
-                            pyautogui.scroll(-final_speed) # Scroll layar ke BAWAH
+                            pyautogui.scroll(-final_speed) 
                             return f"AUTO-SCROLL DOWN ({final_speed})"
                     else:
-                        # Rem Perlahan
                         self.smoothed_speed = (1 - self.speed_ema_alpha) * self.smoothed_speed
                 
                 return "HOLDING TILT ANCHOR"
