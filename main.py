@@ -15,8 +15,8 @@ def main():
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     tracker = HandTracker(detection_con=0.8, track_con=0.8)
-    recognizer = GestureRecognizer(ema_alpha=0.65)
-    controller = SystemController(sensitivity=0.7, deadzone=15)
+    recognizer = GestureRecognizer()
+    controller = SystemController()
 
     window_name = "Iron Man Vision Controller"
     
